@@ -12,15 +12,25 @@ import android.net.wifi.*;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
+import android.app.ProgressDialog;
 
 import org.w3c.dom.Text;
+import org.apache.http.client.HttpClient;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.client.methods.*;
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.ClientProtocolException;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.*;
 import java.util.Enumeration;
-
+import java.util.List;
+import java.util.ArrayList;
 
 public class MainActivity extends Activity {
 
@@ -32,12 +42,12 @@ public class MainActivity extends Activity {
     private int PORT = 3333;
     private int CHUNK_SIZE = 2048;
 
-    private Thread ip_thread = null;
     private Thread listen_thread = null;
 
     private boolean isListening = false;
     private String ip = "";
 
+    private ProgressDialog dialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,13 +56,6 @@ public class MainActivity extends Activity {
 
         setButtonHandlers();
         enableButtons(false);
-
-        ip_thread= new Thread(new Runnable() {
-            public void run() {
-                getIpAddr();
-            }
-        }, "IP Thread");
-        ip_thread.run();
 
     }
 
@@ -75,32 +78,56 @@ public class MainActivity extends Activity {
             switch (v.getId()) {
                 case R.id.btnStart: {
                     enableButtons(true);
-                    startListen();
+                    dialog = ProgressDialog.show(MainActivity.this, "wait...", "Registering ip and wait for connection");
+                    registerIPAndListen();
                     break;
                 }
                 case R.id.btnEnd: {
                     enableButtons(false);
                     isListening = false;
                     listen_thread = null;
-                    TextView ip_text = ((TextView) findViewById(R.id.ip_text));
-                    ip_text.setText(ip + ":" + (PORT + ""));
                     break;
                 }
             }
         }
     };
 
-    private void startListen() {
+    private void registerIPAndListen() {
         isListening = true;
         listen_thread= new Thread(new Runnable() {
             public void run() {
-                listen_thread();
+                register_ip_thread();
             }
         }, "Listen Thread");
         listen_thread.start();
     }
 
-    private void getIpAddr() {
+    private void register_ip_thread() {
+
+        HttpClient httpclient = new DefaultHttpClient();
+        HttpPut httpPut = new HttpPut("http://52.25.63.79/api/voice");
+
+        try {
+            // Add your data
+            String ip = getIpAddr();
+            List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>(2);
+            nameValuePairs.add(new BasicNameValuePair("ip", ip));
+            httpPut.setEntity(new UrlEncodedFormEntity(nameValuePairs));
+
+            // Execute HTTP Post Request
+            HttpResponse response = httpclient.execute(httpPut);
+
+        } catch (ClientProtocolException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        listen_thread();
+    }
+
+    private String getIpAddr() {
         try {
             Enumeration<NetworkInterface> networkInterfaces = NetworkInterface
                     .getNetworkInterfaces();
@@ -113,14 +140,15 @@ public class MainActivity extends Activity {
                     if (!ia.isLinkLocalAddress()
                             && !ia.isLoopbackAddress()
                             && ia instanceof Inet4Address) {
-                        ip = ia.toString();
-                        ((TextView) findViewById(R.id.ip_text)).setText(ip + ":" + (PORT + ""));
-                        return;
+                        ip = ia.toString().substring(1);
+                        return ip + ":" + (PORT + "");
                     }
                 }
             }
         } catch (SocketException e) {
+            e.printStackTrace();
         }
+        return "";
     }
 
     @Override
@@ -138,6 +166,7 @@ public class MainActivity extends Activity {
             while (true) {
                 System.out.println("Server waiting for connection...");
                 socket = server.accept();
+                dialog.dismiss();
                 byte[] buffer = new byte[CHUNK_SIZE];
                 int bytesRead;
                 int pos = 0;
